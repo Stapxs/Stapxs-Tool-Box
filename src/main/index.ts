@@ -1,74 +1,128 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import Store from 'electron-store'
+import log4js from 'log4js'
+import windowStateKeeper from 'electron-window-state'
+
+import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import icon from '../../resources/icon.png?asset'
+import packageInfo from '../../package.json' with { type: 'json' }
+import ipcMainHandler from './function/ipc'
+
+/* eslint-disable no-console */
+const isPrimary = app.requestSingleInstanceLock()
+const logger = log4js.getLogger('background')
+const isDevelopment = process.env.NODE_ENV !== 'production'
+
+export let logLevel = isDevelopment ? 'debug' : 'info'
+export let win = undefined as BrowserWindow | undefined
 
 function createWindow(): void {
-  // Create the browser window.
-  const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
-    show: false,
-    autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+    const store = new Store() as any
+    if(store.get('opt_log_level')) {
+        logLevel = (store.get('opt_log_level') ?? 'info') as string
     }
-  })
+    logger.level = logLevel
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-  })
+    console.log('')
+    console.log(' _____ _____ _____ _____ __ __  \n' +
+                '|   __|_   _|  _  |  _  |  |  | \n' +
+                '|__   | | | |     |   __|-   -| \n' +
+                '|_____| |_| |__|__|__|  |__|__| CopyRight © Stapx Steve')
+    console.log('=======================================================')
+    console.log('日志等级:', logLevel)
+    logger.info('欢迎使用 Stapxs QQ Lite, 当前版本: ' + packageInfo.version)
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
+    logger.info('启动平台架构：' + process.platform)
+    logger.info('正在创建窗体 ……')
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+    const mainWindowState = windowStateKeeper({
+        defaultWidth: 850,
+        defaultHeight: 530
+    })
+
+    let windowConfig = {
+        x: mainWindowState.x,
+        y: mainWindowState.y,
+        width: mainWindowState.width,
+        height: mainWindowState.height,
+        // icon: join(__dirname, '../assets/icons/icon.png'),
+        show: false,
+        autoHideMenuBar: true,
+        webPreferences: {
+            preload: join(__dirname, '../preload/index.js'),
+            sandbox: false
+        },
+        maximizable: false,
+        fullscreenable: false,
+    } as Electron.BrowserWindowConstructorOptions
+    // 平台补充配置
+    if(process.platform === 'darwin') {
+        // MacOS
+        windowConfig = {
+            ...windowConfig,
+            titleBarStyle: 'hidden',
+            trafficLightPosition: { x: 11, y: 10 },
+            vibrancy: 'fullscreen-ui',
+            transparent: true,
+            visualEffectState: 'followWindow'
+        }
+    } else if(process.platform === 'win32') {
+        // Windows
+        windowConfig = {
+            ...windowConfig,
+            backgroundColor: '#00000000',
+            backgroundMaterial: 'acrylic',
+            frame: false
+        }
+    } else if (process.platform === 'linux') {
+        // Linux
+        windowConfig = {
+            ...windowConfig,
+            transparent: true,
+            frame: false
+        }
+    }
+    // 创建窗体
+    win = new BrowserWindow(windowConfig)
+    mainWindowState.manage(win)
+    win.on('ready-to-show', () => {
+        if(win) win.show()
+    })
+
+    win.webContents.setWindowOpenHandler((details) => {
+        shell.openExternal(details.url)
+        return { action: 'deny' }
+    })
+
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+        win.loadURL(process.env['ELECTRON_RENDERER_URL'])
+        win.webContents.openDevTools()
+    } else {
+        win.loadURL('app://./index.html')
+    }
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
-  // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+    // 单例模式
+    if (!isPrimary) {
+        app.quit()
+        return
+    }
+    electronApp.setAppUserModelId('cn.stapxs.toolbox')
 
-  // Default open or close DevTools by F12 in development
-  // and ignore CommandOrControl + R in production.
-  // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
-  })
+    app.on('browser-window-created', (_, window) => {
+        optimizer.watchWindowShortcuts(window)
+    })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
-
-  createWindow()
-
-  app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
+    // TODO 注册所有 IPC 事件
+    ipcMainHandler()
+    // 创建窗体
+    createWindow()
+    app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
     app.quit()
-  }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.
