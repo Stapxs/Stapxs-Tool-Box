@@ -8,7 +8,6 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import packageInfo from '../../package.json' with { type: 'json' }
 import ipcMainHandler from './function/ipc'
 
-/* eslint-disable no-console */
 const isPrimary = app.requestSingleInstanceLock()
 const logger = log4js.getLogger('background')
 const isDevelopment = process.env.NODE_ENV !== 'production'
@@ -23,6 +22,7 @@ function createWindow(): void {
     }
     logger.level = logLevel
 
+    /* eslint-disable no-console */
     console.log('')
     console.log(' _____ _____ _____ _____ __ __  \n' +
                 '|   __|_   _|  _  |  _  |  |  | \n' +
@@ -30,6 +30,7 @@ function createWindow(): void {
                 '|_____| |_| |__|__|__|  |__|__| CopyRight © Stapx Steve')
     console.log('=======================================================')
     console.log('日志等级:', logLevel)
+    /* eslint-enable no-console */
     logger.info('欢迎使用 Stapxs QQ Lite, 当前版本: ' + packageInfo.version)
 
     logger.info('启动平台架构：' + process.platform)
@@ -49,7 +50,7 @@ function createWindow(): void {
         show: false,
         autoHideMenuBar: true,
         webPreferences: {
-            preload: join(__dirname, '../preload/index.js'),
+            preload: join(__dirname, '../preload/index.mjs'),
             sandbox: false
         },
         maximizable: false,
@@ -114,7 +115,7 @@ app.whenReady().then(() => {
         optimizer.watchWindowShortcuts(window)
     })
 
-    // TODO 注册所有 IPC 事件
+    // 注册所有 IPC 事件
     ipcMainHandler()
     // 创建窗体
     createWindow()
